@@ -17,8 +17,8 @@ contract OracleUpgradeable is Initializable {
     }
 
     function getPriceInWeth(address token) public view returns (uint256) {
-        address swapPoolOfToken = IPoolFactory(s_poolFactory).getPool(token);
-        return ITSwapPool(swapPoolOfToken).getPriceOfOnePoolTokenInWeth();
+        address swapPoolOfToken = IPoolFactory(s_poolFactory).getPool(token); // for underlying token check for weth
+        return ITSwapPool(swapPoolOfToken).getPriceOfOnePoolTokenInWeth(); // uderlying token to weth price like dai to weth > 1 dai = 0.5 weth
     }
 
     function getPrice(address token) external view returns (uint256) {

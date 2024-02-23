@@ -91,13 +91,13 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
     /*//////////////////////////////////////////////////////////////
                             STATE VARIABLES
     //////////////////////////////////////////////////////////////*/
-    mapping(IERC20 => AssetToken) public s_tokenToAssetToken;
+    mapping(IERC20 => AssetToken) public s_tokenToAssetToken; // track  of underlying/Deposited Token to Asset Token
 
     // The fee in WEI, it should have 18 decimals. Each flash loan takes a flat fee of the token price.
     uint256 private s_feePrecision;
     uint256 private s_flashLoanFee; // 0.3% ETH fee
 
-    mapping(IERC20 token => bool currentlyFlashLoaning) private s_currentlyFlashLoaning;
+    mapping(IERC20 token => bool currentlyFlashLoaning) private s_currentlyFlashLoaning; // mapps for a underlying/deposited token is being in falshloan or not
 
     /*//////////////////////////////////////////////////////////////
                                  EVENTS
@@ -137,23 +137,49 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
     /*//////////////////////////////////////////////////////////////
                            EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
+
+    // @audit-low if the deployer forget to call `initialize` function then // frontrun issue.
+    // anyone can call the `initialize` with other `tswapAddress`
+    // Which breaks protocol 
     function initialize(address tswapAddress) external initializer {
         __Ownable_init(msg.sender);
         __UUPSUpgradeable_init();
-        __Oracle_init(tswapAddress);
+        __Oracle_init(tswapAddress); // tswapAddress poolfactory provider tsawp dex
         s_feePrecision = 1e18;
         s_flashLoanFee = 3e15; // 0.3% ETH fee
     }
 
     function deposit(IERC20 token, uint256 amount) external revertIfZero(amount) revertIfNotAllowedToken(token) {
-        AssetToken assetToken = s_tokenToAssetToken[token];
-        uint256 exchangeRate = assetToken.getExchangeRate();
+
+        AssetToken assetToken = s_tokenToAssetToken[token]; // it fetches asset Token based on allowed asset/uderlying token pair
+        uint256 exchangeRate = assetToken.getExchangeRate(); /// comes from asset Contract
+
         uint256 mintAmount = (amount * assetToken.EXCHANGE_RATE_PRECISION()) / exchangeRate;
+
+        /** mint amount calculation 
+            let  amount = 100
+            exchangeRate = 1e18 ;
+            EXCHANGE_RATE_PRECISION = 1e18;
+
+            mintAmount = 100e18 * 1e18 / 1e18;
+            mint amount  = 100e18;
+
+            what if the the uderlying token has 100e8 decimal
+             mintamount = 100e8 * 1e18 / 1e18 = 100e16  this could be a issue
+
+
+
+         */
+
         emit Deposit(msg.sender, token, amount);
+        // @ audit It breaks the protocol 
+        // user deposited amount is locked for updating exchanging rate here
         assetToken.mint(msg.sender, mintAmount);
         uint256 calculatedFee = getCalculatedFee(token, amount);
-        assetToken.updateExchangeRate(calculatedFee);
-        token.safeTransferFrom(msg.sender, address(assetToken), amount);
+
+        assetToken.updateExchangeRate(calculatedFee); // but why updating excahnge with falshloan fee
+
+        token.safeTransferFrom(msg.sender, address(assetToken), amount);// asset token has right to use underlying token now.
     }
 
     /// @notice Withdraws the underlying token from the asset token
@@ -167,12 +193,12 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
         revertIfZero(amountOfAssetToken)
         revertIfNotAllowedToken(token)
     {
-        AssetToken assetToken = s_tokenToAssetToken[token];
-        uint256 exchangeRate = assetToken.getExchangeRate();
+        AssetToken assetToken = s_tokenToAssetToken[token];// extract underlying token from asset token
+        uint256 exchangeRate = assetToken.getExchangeRate(); // exchange rate from assetToken
         if (amountOfAssetToken == type(uint256).max) {
             amountOfAssetToken = assetToken.balanceOf(msg.sender);
         }
-        uint256 amountUnderlying = (amountOfAssetToken * exchangeRate) / assetToken.EXCHANGE_RATE_PRECISION();
+        uint256 amountUnderlying = (amountOfAssetToken * exchangeRate) / assetToken.EXCHANGE_RATE_PRECISION(); // amount going tobe redemed
         emit Redeemed(msg.sender, token, amountOfAssetToken, amountUnderlying);
         assetToken.burn(msg.sender, amountOfAssetToken);
         assetToken.transferUnderlyingTo(msg.sender, amountUnderlying);
@@ -189,7 +215,7 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
         revertIfNotAllowedToken(token)
     {
         AssetToken assetToken = s_tokenToAssetToken[token];
-        uint256 startingBalance = IERC20(token).balanceOf(address(assetToken));
+        uint256 startingBalance = IERC20(token).balanceOf(address(assetToken)); // starting amount of underlying token
 
         if (amount > startingBalance) {
             revert ThunderLoan__NotEnoughTokenBalance(startingBalance, amount);
@@ -201,7 +227,7 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
 
         uint256 fee = getCalculatedFee(token, amount);
         // slither-disable-next-line reentrancy-vulnerabilities-2 reentrancy-vulnerabilities-3
-        assetToken.updateExchangeRate(fee);
+        assetToken.updateExchangeRate(fee); // assetToken exchange rate has been  update has loan is going to be taken
 
         emit FlashLoan(receiverAddress, token, amount, fee, params);
 
@@ -228,6 +254,7 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
         s_currentlyFlashLoaning[token] = false;
     }
 
+    // repays flash loans
     function repay(IERC20 token, uint256 amount) public {
         if (!s_currentlyFlashLoaning[token]) {
             revert ThunderLoan__NotCurrentlyFlashLoaning();
@@ -236,6 +263,7 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
         token.safeTransferFrom(msg.sender, address(assetToken), amount);
     }
 
+    // Token to be allowed 
     function setAllowedToken(IERC20 token, bool allowed) external onlyOwner returns (AssetToken) {
         if (allowed) {
             if (address(s_tokenToAssetToken[token]) != address(0)) {

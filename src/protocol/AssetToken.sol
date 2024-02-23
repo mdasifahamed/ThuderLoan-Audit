@@ -5,6 +5,9 @@ import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
+
+// Liquidity provider gets Asset otken for depositing tokens in the protocol 
+// If Some deposits dai as for depositing dai he will get asset token
 contract AssetToken is ERC20 {
     error AssetToken__onlyThunderLoan();
     error AssetToken__ExhangeRateCanOnlyIncrease(uint256 oldExchangeRate, uint256 newExchangeRate);
@@ -19,10 +22,10 @@ contract AssetToken is ERC20 {
     address private immutable i_thunderLoan;
 
     // The underlying per asset exchange rate
-    // ie: s_exchangeRate = 2
+    // ie: s_exchangeRate = 2 
     // means 1 asset token is worth 2 underlying tokens
     uint256 private s_exchangeRate;
-    uint256 public constant EXCHANGE_RATE_PRECISION = 1e18;
+    uint256 public constant EXCHANGE_RATE_PRECISION = 1e18; // starts with 1 
     uint256 private constant STARTING_EXCHANGE_RATE = 1e18;
 
     /*//////////////////////////////////////////////////////////////
@@ -52,7 +55,7 @@ contract AssetToken is ERC20 {
     //////////////////////////////////////////////////////////////*/
     constructor(
         address thunderLoan,
-        IERC20 underlying,
+        IERC20 underlying, // the that is going to be deposited .
         string memory assetName,
         string memory assetSymbol
     )
@@ -86,7 +89,7 @@ contract AssetToken is ERC20 {
         // newExchangeRate = oldExchangeRate * (totalSupply + fee) / totalSupply
         // newExchangeRate = 1 (4 + 0.5) / 4
         // newExchangeRate = 1.125
-        uint256 newExchangeRate = s_exchangeRate * (totalSupply() + fee) / totalSupply();
+        uint256 newExchangeRate = s_exchangeRate * (totalSupply() + fee) / totalSupply(); // total supply is 4 and fee is 1 then 1*(4+1) / 4 = 5/4 =1.25
 
         if (newExchangeRate <= s_exchangeRate) {
             revert AssetToken__ExhangeRateCanOnlyIncrease(s_exchangeRate, newExchangeRate);
